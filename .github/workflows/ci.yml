@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            apps/producer-python/requirements.txt
+            apps/consumer-python/requirements.txt
+      
+      - name: Ensure Docker Compose
+        uses: docker/setup-docker-action@v1
+      
+      - name: Smoke Test
+        run: bash scripts/smoke_test.sh
