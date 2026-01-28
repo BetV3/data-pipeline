@@ -25,7 +25,7 @@ jobs:
             apps/consumer-python/requirements.txt
       
       - name: Ensure Docker Compose
-        uses: docker/setup-docker-action@v1
+        uses: docker/setup-docker-action@v4
       
       - name: Smoke Test
         run: bash scripts/smoke_test.sh
