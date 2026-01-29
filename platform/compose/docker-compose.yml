@@ -91,6 +91,20 @@ services:
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: "kafka:29092"
+  
+  schema-registry:
+    profiles: ["schemas"]
+    image: confluentinc/cp-schema-registry:8.0.3
+    container_name: dpp-schema-registry
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - '${SCHEMA_REGISTRY_PORT:-8085}:8081'
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_LISTENERS: "http://0.0.0.0:8081"
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: "PLAINTEXT://kafka:29092"
 
   adminer:
     image: adminer:latest
@@ -101,5 +115,116 @@ services:
     ports:
       - "${ADMINER_PORT:-8081}:8080"
 
+  # ---------------------------
+  # Observability (profile: obs)
+  # ---------------------------
+
+  postgres-exporter:
+    profiles: ["obs"]
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: dpp-postgres-exporter
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-platform}:${POSTGRES_PASSWORD:-platform}@postgres:5432/${POSTGRES_DB:-platform}?sslmode=disable"
+    ports:
+      - "${POSTGRES_EXPORTER_PORT:-9187}:9187"
+
+  kafka-exporter:
+    profiles: ["obs"]
+    image: danielqsj/kafka-exporter:latest
+    container_name: dpp-kafka-exporter
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command:
+      - "--kafka.server=kafka:29092"
+    ports:
+      - "${KAFKA_EXPORTER_PORT:-9308}:9308"
+
+  prometheus:
+    profiles: ["obs"]
+    image: prom/prometheus:latest
+    container_name: dpp-prometheus
+    depends_on:
+      - postgres-exporter
+      - kafka-exporter
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    profiles: ["obs"]
+    image: grafana/grafana:latest
+    container_name: dpp-grafana
+    depends_on:
+      - prometheus
+      - postgres
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+  # ---------------------------
+  # App containers (profile: apps)
+  # ---------------------------
+
+  producer:
+    profiles: ["apps"]
+    build:
+      context: ../../apps/producer-python
+      dockerfile: Dockerfile
+    container_name: dpp-producer
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKERS: "kafka:29092"
+      KAFKA_TOPIC: ${KAFKA_TOPIC_EVENTS:-events}
+      EVENTS_PER_SEC: ${EVENTS_PER_SEC:-25}
+      RUN_SECONDS: ${RUN_SECONDS:-10}
+      EVENT_TYPE: ${EVENT_TYPE:-event_received}
+      EVENT_SOURCE: "producer-python"
+      PRODUCER_METRICS_PORT: "9101"
+    ports:
+      - "9101:9101"
+    restart: "no"
+
+  consumer:
+    profiles: ["apps"]
+    build:
+      context: ../../apps/consumer-python
+      dockerfile: Dockerfile
+    container_name: dpp-consumer
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_started
+    environment:
+      KAFKA_BROKERS: "kafka:29092"
+      KAFKA_TOPIC: ${KAFKA_TOPIC_EVENTS:-events}
+      KAFKA_GROUP_ID: ${KAFKA_GROUP_ID:-raw-events-writer}
+      POSTGRES_DSN: "postgresql://platform:platform@postgres:5432/platform"
+      POLL_MS: ${POLL_MS:-1000}
+      CONSUMER_METRICS_PORT: "9102"
+    ports:
+      - "9102:9102"
+    restart: unless-stopped
+
+
+
 volumes:
   postgres_data:
+  prometheus_data:
+  grafana_data:

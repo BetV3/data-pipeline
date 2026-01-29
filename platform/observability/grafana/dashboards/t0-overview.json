@@ -1,0 +1,108 @@
+{
+  "uid": "dpp-t0",
+  "title": "DPP - T0 Overview",
+  "timezone": "utc",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Raw events total",
+      "datasource": { "type": "postgres", "uid": "PG" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawSql": "SELECT COUNT(*)::bigint AS value FROM raw_events;" }
+      ],
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Events per minute",
+      "datasource": { "type": "postgres", "uid": "PG" },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT $__timeGroupAlias(occurred_at,'1m'), COUNT(*)::bigint AS value FROM raw_events WHERE $__timeFilter(occurred_at) GROUP BY 1 ORDER BY 1;"
+        }
+      ],
+      "gridPos": { "x": 6, "y": 0, "w": 18, "h": 10 }
+    },
+    {
+      "type": "stat",
+      "title": "Ingestion lag p99 (60m)",
+      "datasource": { "type": "postgres", "uid": "PG" },
+      "targets": [
+        { "refId": "A", "format": "table", "rawSql": "SELECT COALESCE(p99_s,0)::double precision AS value FROM ingestion_lag_stats_60m;" }
+      ],
+      "gridPos": { "x": 0, "y": 5, "w": 6, "h": 5 }
+    },
+    {
+      "type": "stat",
+      "title": "Kafka consumer group lag (raw-events-writer)",
+      "datasource": { "type": "prometheus", "uid": "PROM" },
+      "targets": [
+        { "refId": "A", "expr": "sum(clamp_min(kafka_consumergroup_lag{consumergroup=\"raw-events-writer\"}, 0))" }
+      ],
+      "gridPos": { "x": 0, "y": 10, "w": 6, "h": 5 }
+    },
+    {
+      "type": "stat",
+      "title": "Prometheus scrape up (Postgres exporter)",
+      "datasource": { "type": "prometheus", "uid": "PROM" },
+      "targets": [
+        { "refId": "A", "expr": "up{job=\"postgres-exporter\"}" }
+      ],
+      "gridPos": { "x": 6, "y": 10, "w": 6, "h": 5 }
+    },
+    {
+      "type": "stat",
+      "title": "Prometheus scrape up (Kafka exporter)",
+      "datasource": { "type": "prometheus", "uid": "PROM" },
+      "targets": [
+        { "refId": "A", "expr": "up{job=\"kafka-exporter\"}" }
+      ],
+      "gridPos": { "x": 12, "y": 10, "w": 6, "h": 5 }
+    },
+    {
+    "type": "timeseries",
+    "title": "Producer delivered / sec",
+    "datasource": { "type": "prometheus", "uid": "PROM" },
+    "targets": [
+        { "refId": "A", "expr": "sum(rate(dpp_producer_events_delivered_total[1m]))" }
+    ],
+    "gridPos": { "x": 0, "y": 15, "w": 12, "h": 8 }
+    },
+    {
+    "type": "timeseries",
+    "title": "Consumer written / sec",
+    "datasource": { "type": "prometheus", "uid": "PROM" },
+    "targets": [
+        { "refId": "A", "expr": "sum(rate(dpp_consumer_events_written_total[1m]))" }
+    ],
+    "gridPos": { "x": 12, "y": 15, "w": 12, "h": 8 }
+    },
+    {
+    "type": "timeseries",
+    "title": "Consumer DB write latency p99 (seconds)",
+    "datasource": { "type": "prometheus", "uid": "PROM" },
+    "targets": [
+        {
+        "refId": "A",
+        "expr": "histogram_quantile(0.99, sum(rate(dpp_consumer_db_write_seconds_bucket[5m])) by (le))"
+        }
+    ],
+    "gridPos": { "x": 0, "y": 23, "w": 12, "h": 8 }
+    },
+    {
+    "type": "timeseries",
+    "title": "Consumer processing errors / sec",
+    "datasource": { "type": "prometheus", "uid": "PROM" },
+    "targets": [
+        { "refId": "A", "expr": "sum(rate(dpp_consumer_processing_errors_total[5m]))" }
+    ],
+    "gridPos": { "x": 12, "y": 23, "w": 12, "h": 8 }
+    }
+  ]
+}

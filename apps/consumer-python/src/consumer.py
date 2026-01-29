@@ -6,6 +6,14 @@ import sys
 import time
 from typing import Any, Dict, Optional
 
+from metrics import (
+    CONSUMER_MESSAGES,
+    CONSUMER_WRITTEN,
+    CONSUMER_ERRORS,
+    DB_WRITE_SECONDS, 
+    start_metrics_server
+)
+
 import psycopg
 from psycopg.rows import dict_row
 from confluent_kafka import Consumer, KafkaException
@@ -74,6 +82,8 @@ def main() -> int:
 
     conn = connect_db(args.db_dsn)
 
+    metrics_port = start_metrics_server()
+    print(f"Consumer metrics: http://localhost:{metrics_port}/metrics")
     stop = False
 
     def handle_sig(_sig, _frame):
@@ -97,17 +107,22 @@ def main() -> int:
             if msg.error():
                 raise KafkaException(msg.error())
 
+            CONSUMER_MESSAGES.labels(args.topic).inc()
             try:
                 event = parse_json(msg.value())
-                insert_raw_event(conn, event)
+                with DB_WRITE_SECONDS.time():
+                    insert_raw_event(conn, event)
 
-                # Commit after successful DB commit to avoid skipping messages.
-                consumer.commit(message=msg, asynchronous=False)
+                    # Commit after successful DB commit to avoid skipping messages.
+                    consumer.commit(message=msg, asynchronous=False)
+
+                CONSUMER_WRITTEN.labels(topic=args.topic).inc()
 
                 written += 1
                 if written % 100 == 0:
                     print(f"[OK] written={written} last_offset={msg.offset()} partition={msg.partition()}")
             except Exception as e:
+                CONSUMER_ERRORS.labels(topic=args.topic).inc()
                 # For T0: log and continue. DLQ comes in T1.
                 print(f"[ERROR] failed to process message: {e}", file=sys.stderr)
                 # small sleep to avoid tight error loops

@@ -8,6 +8,14 @@ import time
 import uuid
 from datetime import datetime, timezone
 
+from metrics import (
+    PRODUCER_SENT,
+    PRODUCER_DELIVERED,
+    PRODUCER_DELIVERY_ERRORS,
+    PRODUCER_BUILD_SECONDS,
+    start_metrics_server
+)
+
 from confluent_kafka import Producer
 
 
@@ -31,11 +39,15 @@ def build_event(event_type: str, source: str) -> dict:
 
 
 def delivery_report(err, msg):
+    topic = msg.topic()
     if err is not None:
+        PRODUCER_DELIVERY_ERRORS.labels(topic=topic).inc()
         print(f"[DELIVERY-ERROR] {err}", file=sys.stderr)
     else:
-        # Keep it terse but useful
+        PRODUCER_DELIVERED.labels(topic=topic).inc()
         print(f"[DELIVERED] topic={msg.topic()} partition={msg.partition()} offset={msg.offset()}")
+
+
 
 
 def main() -> int:
@@ -59,6 +71,9 @@ def main() -> int:
 
     producer = Producer(conf)
 
+    metrics_port = start_metrics_server()
+    print(f"Producer metrics: http://localhost:{metrics_port}/metrics")
+
     stop = False
 
     def handle_sig(_sig, _frame):
@@ -78,11 +93,13 @@ def main() -> int:
 
     sent = 0
     while not stop and time.time() < end_time:
-        event = build_event(args.event_type, args.source)
+        with PRODUCER_BUILD_SECONDS.time():
+            event = build_event(args.event_type, args.source)
         key = event["event_type"].encode("utf-8")
         value = json.dumps(event, separators=(",", ":")).encode("utf-8")
 
         producer.produce(args.topic, key=key, value=value, on_delivery=delivery_report)
+        PRODUCER_SENT.labels(topic=args.topic).inc()
         sent += 1
 
         # Serve delivery callbacks

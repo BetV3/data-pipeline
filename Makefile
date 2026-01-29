@@ -2,13 +2,21 @@ SHELL := /bin/bash
 
 .PHONY: up down reset ps logs smoke \
         venv-producer venv-consumer producer consumer \
-        db-count db-shell kafka-topics kafka-consume
+        db-count db-shell kafka-topics kafka-consume \
+		venv-serve serve up-obs up-apps up-all down-all \
+		reset-all
 
 up:
 	cd platform/compose && docker compose up -d
 
 down:
 	cd platform/compose && docker compose down
+
+down-all:
+	cd platform/compose && docker compose --profile apps --profile obs down
+
+reset-all:
+	cd platform/compose && docker compose --profile apps --profile obs down -v
 
 reset:
 	cd platform/compose && docker compose down -v
@@ -21,6 +29,27 @@ logs:
 
 smoke:
 	bash scripts/smoke_test.sh
+
+up-obs:
+	cd platform/compose && docker compose --profile obs up -d
+
+up-apps:
+	cd platform/compose && docker compose --profile apps up -d --build
+
+up-all:
+	cd platform/compose && docker compose --profile apps --profile obs up -d --build
+
+venv-serve:
+	cd apps/serving-api && \
+	  [ -d .venv ] || python -m venv .venv; \
+	  source .venv/bin/activate; \
+	  pip install -r requirements.txt
+
+serve: venv-serve
+	cd apps/serving-api && \
+	  source .venv/bin/activate && \
+	  POSTGRES_DSN="postgresql://platform:platform@localhost:5432/platform" \
+	  uvicorn src.main:app --reload --port 8000
 
 venv-producer:
 	cd apps/producer-python && \
